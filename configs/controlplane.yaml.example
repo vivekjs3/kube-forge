@@ -1,0 +1,24 @@
+# Talos Linux Control Plane Machine Configuration Example
+version: v1alpha1
+debug: false
+persist: true
+machine:
+  type: controlplane
+  token: 7k289s.exampletoken12345
+  ca:
+    crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...
+    key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0t...
+  install:
+    disk: /dev/sda
+    image: factory.talos.dev/installer/v1.8.0
+    wipe: true
+  network:
+    hostname: talos-control-01
+cluster:
+  id: example-cluster-id
+  secret: example-cluster-secret
+  controlPlane:
+    endpoint: https://10.10.10.10:6443
+  clusterName: kube-forge-talos
+  discovery:
+    enabled: true

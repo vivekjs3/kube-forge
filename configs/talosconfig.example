@@ -1,0 +1,11 @@
+# Talos Client Authentication Configuration Example (~/.talos/config)
+context: kube-forge-talos
+contexts:
+  kube-forge-talos:
+    endpoints:
+      - 10.10.10.10
+    nodes:
+      - 10.10.10.10
+    ca: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...
+    crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...
+    key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0t...
