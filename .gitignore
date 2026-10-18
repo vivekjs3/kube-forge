@@ -1,0 +1,40 @@
+# kube-forge Global Git Ignore
+
+# Kubernetes configs & secrets
+*.kubeconfig
+kubeconfig
+admin.conf
+*.key
+*.csr
+*.crt
+*.pem
+*.pfx
+*.p12
+*.token
+*.jks
+token.env
+secrets.env
+
+# Node runtime & cluster data
+etcd-data/
+*.rdb
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary & backup files
+*.bak
+*.bak.*
+*.tmp
+*.swp
+*~
+*.orig
+
+# Logs & test output
+*.log
+tests/reports/
+artifacts/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
