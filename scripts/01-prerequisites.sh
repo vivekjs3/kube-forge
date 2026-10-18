@@ -57,7 +57,7 @@ PRODUCT_UUID=$(cat /sys/class/dmi/id/product_uuid 2>/dev/null || echo "unknown")
 echo "${INFO} Machine Product UUID: ${PRODUCT_UUID}"
 
 # 6. Basic Utility Dependencies
-REQUIRED_PKGS=(curl apt-transport-https ca-certificates gnupg lsb-release iproute2 iptables)
+REQUIRED_PKGS=(curl apt-transport-https conntrack socat ipset ethtool ca-certificates gnupg lsb-release iproute2 iptables)
 MISSING_PKGS=()
 
 for pkg in "${REQUIRED_PKGS[@]}"; do
