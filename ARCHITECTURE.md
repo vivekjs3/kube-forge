@@ -1,173 +1,102 @@
-# Kubernetes Architecture & Platform Blueprint
+# K3s Architecture & Internal Mechanics
 
-Welcome to the architectural foundation of **kube-forge**. This document provides an infrastructure-level breakdown of Kubernetes internals, control plane vs. worker node data paths, security boundaries, and installation paradigms.
-
----
-
-## 1. Global System Topology
-
-At its core, Kubernetes is a distributed state machine backed by a consensus store (`etcd`) and coordinated through an active API gateway (`kube-apiserver`).
-
-```
-                              CLUSTERING BOUNDARY
-  =============================================================================
-  +-------------------------------------------------------------------------+
-  |                          CONTROL PLANE NODE(S)                          |
-  |                                                                         |
-  |   +-------------------+    +-----------------------+                    |
-  |   |   kube-scheduler  |    | kube-controller-mgr   |                    |
-  |   +---------+---------+    +-----------+-----------+                    |
-  |             |                          |                                |
-  |             v                          v                                |
-  |      +---------------+       +-------------------+                      |
-  |      |               | <---> |       etcd        | (Port 2379/2380)     |
-  |      | kube-apiserver|       +-------------------+                      |
-  |      |  (Port 6443)  |                                                  |
-  |      +-------+-------+                                                  |
-  +--------------|----------------------------------------------------------+
-                 |
-                 | TLS / mTLS (HTTPS)
-                 |
-  +--------------|----------------------------------------------------------+
-  |              v              WORKER NODE(S)                              |
-  |   +---------------------+   +---------------------+   +---------------+ |
-  |   |       kubelet       |   |     kube-proxy      |   |    CoreDNS    | |
-  |   |    (Port 10250)     |   | (iptables/IPVS/eBPF)|   |   (Port 53)   | |
-  |   +----------+----------+   +---------------------+   +---------------+ |
-  |              |                                                          |
-  |              v (gRPC via Unix Socket)                                   |
-  |   +---------------------------------------------+                       |
-  |   |   Container Runtime Interface (CRI)         |                       |
-  |   |   (containerd / CRI-O / runc)               |                       |
-  |   +----------------------+----------------------+                       |
-  |                          |                                              |
-  |                          v (CNI Plugin via veth/eBPF)                   |
-  |   +---------------------------------------------+                       |
-  |   |      Container Network Interface (CNI)      |                       |
-  |   |       (Calico / Flannel / Cilium)           |                       |
-  |   +---------------------------------------------+                       |
-  |                                                                         |
-  |   +----------------------+   +----------------------+                   |
-  |   | Pod Sandbox A (veth) |   | Pod Sandbox B (veth) |                   |
-  |   +----------------------+   +----------------------+                   |
-  +-------------------------------------------------------------------------+
-```
+This document provides a technical deep dive into the architecture, component packaging, and datastore model of **K3s**.
 
 ---
 
-## 2. Component Internals & Communication Flows
+## 1. Single Binary Packaging & Execution Model
 
-Every Kubernetes node fulfills a distinct operational role. The table below details what each component does, why it exists, and how it communicates.
-
-| Component | Layer | Communication | What it Does & Why it is Essential |
-|---|---|---|---|
-| **`etcd`** | State Store | Inbound from `kube-apiserver` (port 2379); Raft peer sync (port 2380) | High-availability, strongly consistent key-value store. It stores the cluster's entire state. Only the API server is permitted to talk to etcd directly. |
-| **`kube-apiserver`** | Hub / Gateway | Inbound HTTPS 6443 from all components; Outbound to `etcd` and `kubelet` | The control plane hub. Validates and configures data for api objects (Pods, Services, ReplicationControllers). Exposes REST API. |
-| **`kube-scheduler`** | Control Plane | Outbound HTTPS to `kube-apiserver` | Watches for newly created Pods without assigned nodes, computes node filtering and scoring algorithms, and writes the binding decision back to the API server. |
-| **`kube-controller-manager`** | Control Plane | Outbound HTTPS to `kube-apiserver` | Runs core control loops (Node Lifecycle, Deployment, ReplicaSet, EndpointSlice, ServiceAccount). Continuously reconciles cluster current state with desired state. |
-| **`cloud-controller-manager`** | Control Plane | Outbound HTTPS to API & Cloud APIs | Interfaces with cloud provider APIs (load balancers, node routing, storage volumes). Optional on pure bare-metal. |
-| **`kubelet`** | Node Agent | Inbound HTTPS 10250 from API server; Outbound HTTPS 6443 to API server | The primary node agent. Watches PodSpecs via the API server, instructs the CRI to spin up/down containers, reports node and pod health. |
-| **`CRI Runtime`** | Node Runtime | Inbound gRPC over Unix socket (`/run/containerd/containerd.sock`) | Implements the Container Runtime Interface. Manages container images, creates Linux namespaces, cgroups, and invokes low-level OCI runtimes (`runc`, `crun`). |
-| **`CNI Plugin`** | Node Network | Executed as binary or daemonset (Calico, Flannel, Cilium) | Plugs container network interfaces into host virtual switches/bridges, configures IP addresses (IPAM), and manages pod-to-pod network routing across nodes. |
-| **`kube-proxy`** | Node Routing | Outbound HTTPS to API server; writes kernel iptables / IPVS / eBPF | Reflects Kubernetes `Service` definitions on each node and handles layer 4 TCP/UDP load balancing to healthy backend Pod endpoints. |
-| **`CoreDNS`** | Cluster DNS | Inbound UDP/TCP port 53 from Pods | Internal authoritative DNS server providing cluster-wide service discovery (e.g. `service.namespace.svc.cluster.local`). |
-
----
-
-## 3. Communication Sequence: Pod Creation Lifecycle
-
-Understanding how components collaborate during a deployment highlights why each element must be operational:
+In upstream Kubernetes, each component (`apiserver`, `controller-manager`, `scheduler`, `kubelet`, `kube-proxy`, `containerd`, `flannel`) is a distinct process or container. K3s bundles all of these into a single Go binary compiled with multi-call capabilities.
 
 ```
-User (kubectl)     kube-apiserver        etcd          kube-scheduler    kube-controller-mgr        kubelet            CRI / CNI
-     |                   |                |                  |                    |                    |                   |
-     | 1. POST Deployment|                |                  |                    |                    |                   |
-     |------------------>|                |                  |                    |                    |                   |
-     |                   | 2. Write state |                  |                    |                    |                   |
-     |                   |--------------->|                  |                    |                    |                   |
-     |                   |                |                  |                    |                    |                   |
-     |                   | 3. Watch: Deployment created      |                    |                    |                   |
-     |                   |------------------------------------------------------->|                    |                   |
-     |                   | 4. Create ReplicaSet & Pod Specs  |                    |                    |                   |
-     |                   |<-------------------------------------------------------|                    |                   |
-     |                   | 5. Persist Pod (nodeName="")      |                    |                    |                   |
-     |                   |--------------->|                  |                    |                    |                   |
-     |                   |                |                  |                    |                    |                   |
-     |                   | 6. Watch: Unscheduled Pod         |                    |                    |                   |
-     |                   |---------------------------------->|                    |                    |                   |
-     |                   | 7. Filter & score nodes; Bind     |                    |                    |                   |
-     |                   |<----------------------------------|                    |                    |                   |
-     |                   | 8. Persist node assignment        |                    |                    |                   |
-     |                   |--------------->|                  |                    |                    |                   |
-     |                   |                |                  |                    |                    |                   |
-     |                   | 9. Watch: Pod assigned to local node                   |                    |                   |
-     |                   |---------------------------------------------------------------------------->|                   |
-     |                   |                |                  |                    |                    | 10. RunPodSandbox |
-     |                   |                |                  |                    |                    |------------------>|
-     |                   |                |                  |                    |                    | 11. Setup CNI net |
-     |                   |                |                  |                    |                    |------------------>|
-     |                   |                |                  |                    |                    | 12. Pull & start  |
-     |                   |                |                  |                    |                    |------------------>|
-     |                   | 13. Pod status: Running           |                    |                    |                   |
-     |                   |<----------------------------------------------------------------------------|                   |
-     |                   | 14. Update etcd|                  |                    |                    |                   |
-     |                   |--------------->|                  |                    |                    |                   |
++---------------------------------------------------------------------------------------+
+|                                    K3S SERVER NODE                                    |
+|                                                                                       |
+|   +-------------------------------------------------------------------------------+   |
+|   |                          k3s server (Single Process)                          |   |
+|   |                                                                               |   |
+|   |   +-------------------+    +--------------------+    +--------------------+   |   |
+|   |   |   kube-scheduler  |    | kube-controller-mgr|    |    CoreDNS / CNI   |   |   |
+|   |   +---------+---------+    +----------+---------+    +----------+---------+   |   |
+|   |             |                         |                         |             |   |
+|   |             v                         v                         v             |   |
+|   |      +-------------------------------------------------------------+          |   |
+|   |      |               Embedded kube-apiserver (Port 6443)           |          |   |
+|   |      +------------------------------+------------------------------+          |   |
+|   |                                     | (gRPC)                                  |   |
+|   |                                     v                                         |   |
+|   |      +-------------------------------------------------------------+          |   |
+|   |      |                  Kine (etcd API translation)                |          |   |
+|   |      +------------------------------+------------------------------+          |   |
+|   |                                     | (SQL Driver)                            |   |
+|   |                                     v                                         |   |
+|   |      +-------------------------------------------------------------+          |   |
+|   |      |              Embedded SQLite (/var/lib/rancher/k3s/...)     |          |   |
+|   |      |         (Or embedded etcd / external PostgreSQL/MySQL)      |          |   |
+|   |      +-------------------------------------------------------------+          |   |
+|   |                                                                               |   |
+|   |   +-----------------------------------------------------------------------+   |   |
+|   |   |                      Embedded Agent / Worker Loop                     |   |   |
+|   |   |   - Embedded kubelet                                                  |   |   |
+|   |   |   - Embedded containerd                                               |   |   |
+|   |   |   - Embedded Flannel CNI                                              |   |   |
+|   |   |   - Embedded kube-proxy (iptables)                                    |   |   |
+|   |   +-----------------------------------------------------------------------+   |   |
+|   +-------------------------------------------------------------------------------+   |
++---------------------------------------------------------------------------------------+
+                                          |
+                                          | HTTPS / mTLS (Port 6443)
+                                          | Node Registration Token
+                                          v
++---------------------------------------------------------------------------------------+
+|                                     K3S AGENT NODE                                    |
+|                                                                                       |
+|   +-------------------------------------------------------------------------------+   |
+|   |                           k3s agent (Single Process)                          |   |
+|   |   - Embedded kubelet                                                          |   |
+|   |   - Embedded containerd (/run/k3s/containerd/containerd.sock)                 |   |
+|   |   - Embedded Flannel CNI                                                      |   |
+|   |   - Embedded kube-proxy                                                       |   |
+|   +-------------------------------------------------------------------------------+   |
++---------------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 4. Network Architecture & Address Spaces
+## 2. The Kine Datastore Architecture
 
-A properly provisioned Kubernetes cluster segregates networking into three non-overlapping CIDR address spaces:
+One of the largest consumers of memory and CPU in standard Kubernetes is `etcd`. For edge or single-node clusters, K3s replaces etcd with **Kine** (*Kine Is Not Etcd*):
 
-1. **Host / Node Network (Underlay):**
-   - Physical or virtual LAN connecting nodes (e.g., `10.10.10.0/24`).
-   - Must allow node-to-node communication across required ports.
-2. **Pod Network (Overlay / Routed):**
-   - Private IP space dedicated to Pods (e.g., `10.244.0.0/16` or `192.168.0.0/16`).
-   - Every Pod receives its own routable IP within this subnet. Pods must be able to communicate with all other Pods on any node without NAT.
-3. **Service Network (Virtual ClusterIPs):**
-   - Virtual CIDR (e.g., `10.96.0.0/12`).
-   - IPs exist only in kernel routing tables (iptables/IPVS/eBPF maps); no physical device or veth possesses a Service IP.
+- **How it works:** Kine exposes an `etcd v3` gRPC endpoint to `kube-apiserver`.
+- When the API server performs `Get`, `Put`, `Watch`, or `Txn` calls, Kine translates them on the fly into standard SQL queries against a lightweight database engine.
+- **Default Database:** Embedded **SQLite** stored locally at `/var/lib/rancher/k3s/server/db/state.db`.
+- **HA Modes:**
+  - Embedded **etcd** (using `--cluster-init`).
+  - External **PostgreSQL** or **MySQL** (using `--datastore-endpoint="postgres://..."`).
 
 ---
 
-## 5. Security & PKI Architecture
+## 3. Packaged Addons & Controllers
 
-Kubernetes is zero-trust by default. Communication between all control-plane and worker components is encrypted via Mutual TLS (mTLS).
+K3s installs essential cluster controllers out of the box so that a freshly booted cluster can immediately serve HTTP traffic and persist volumes:
 
-```
-                            +-----------------------------+
-                            |     Cluster Root CA         |
-                            |       ca.crt / ca.key       |
-                            +--------------+--------------+
-                                           |
-                 +-------------------------+-------------------------+
-                 |                         |                         |
-                 v                         v                         v
-     +-----------------------+ +-----------------------+ +-----------------------+
-     |   API Server Certs    | |    kubelet Client     | |    etcd Peer / Client |
-     |  apiserver.crt (SANs) | |    kubelet.crt/key    | |      etcd-peer.crt    |
-     +-----------------------+ +-----------------------+ +-----------------------+
-```
-
-### Essential Certificates:
-- **`ca.crt`**: Root Certificate Authority certifying all internal components.
-- **`apiserver.crt`**: Server certificate for the API server containing DNS and IP Subject Alternative Names (SANs) for `kubernetes`, `kubernetes.default`, control plane IPs, and load balancer hostnames.
-- **`apiserver-kubelet-client.crt`**: Used by the API server to authenticate when calling kubelets for log streaming, exec, and port forwarding.
-- **`front-proxy-ca.crt`**: Supports aggregated API servers (e.g., Metrics Server).
-- **`etcd/ca.crt`**: Dedicated CA for etcd peer-to-peer and client authentication.
+1. **Flannel CNI:** Configured with VXLAN overlay encapsulation by default.
+2. **CoreDNS:** Scaled down and optimized for low memory footprint.
+3. **Traefik Ingress Controller:** Automatically deployed via HelmChart controller, binding to host ports 80 and 443.
+4. **ServiceLB (klipper-lb):** A lightweight load balancer that allocates host ports on nodes to satisfy `LoadBalancer` type Services without requiring an external cloud provider.
+5. **Local-Path Provisioner:** Dynamic storage provisioner creating `hostPath` backed PersistentVolumes in `/var/lib/rancher/k3s/storage/`.
 
 ---
 
-## 6. Installation Paradigms Compared
+## 4. Key File & Directory Layout
 
-| Paradigm | Exemplar | Pros | Cons / Trade-offs | Ideal Use Case |
-|---|---|---|---|---|
-| **Manual (From Scratch)** | `hardway` | Complete transparency into every binary, certificate, and systemd service. Zero magic. | High operational maintenance; manual certificate renewal; not suited for fast bootstrapping. | Education, mastery of K8s internals, bare-metal engineering. |
-| **Upstream Bootstrapper** | `kubeadm` | Official CNCF standard, static pod architecture, modular, broad ecosystem support. | Manual multi-node infrastructure provisioning; requires manual CNI deployment. | Standard bare-metal production, enterprise private clouds. |
-| **Packaged Distribution** | `k3s` | Single binary, negligible RAM (<512MB), embedded SQLite/etcd, rapid setup. | Non-standard storage backend options by default; modified binary packaging. | Edge devices, IoT, local lab, CI/CD runners, lightweight VMs. |
-| **Hardened Enterprise** | `rke2` | CIS benchmark hardened out-of-the-box, FIPS 140-2 compliance, embedded containerd & etcd. | Heavier resource footprint than k3s; Rancher-centric conventions. | Regulated enterprise, government, security-sensitive production. |
-| **Developer Sandbox** | `minikube` / `microk8s` | One-command spinup, rich addon ecosystem (dashboards, ingress, registries). | Not suitable for bare-metal multi-node production clusters. | Local developer workstations, rapid feature testing. |
-| **Automated Orchestrator**| `kubespray` | Fully automated Ansible playbooks, multi-OS support, day-2 operations (scaling/upgrades). | Slow execution times; requires mastery of Ansible and inventory management. | Large bare-metal fleets, complex heterogeneous infrastructure. |
-| **Immutable Linux OS** | `talos` | Minimal attack surface, no SSH/bash, declarative gRPC API, immutable filesystem. | Requires learning Talos API; cannot run arbitrary Linux debugging tools on the host. | Modern bare-metal GitOps, immutable secure infrastructure. |
+| Path | Purpose |
+|---|---|
+| `/usr/local/bin/k3s` | Universal binary (symlinked to `kubectl`, `crictl`, `ctr`) |
+| `/etc/rancher/k3s/config.yaml` | Declarative server/agent configuration file |
+| `/etc/rancher/k3s/k3s.yaml` | Administrative kubeconfig |
+| `/var/lib/rancher/k3s/server/node-token` | Secret bootstrap token required for agent joining |
+| `/var/lib/rancher/k3s/server/tls/` | CA and mTLS certificates generated during bootstrap |
+| `/var/lib/rancher/k3s/server/db/` | Embedded SQLite database file (`state.db`) |
+| `/var/lib/rancher/k3s/agent/containerd/` | Embedded containerd runtime socket and state |
+| `/var/lib/rancher/k3s/server/manifests/` | Auto-deploy manifest directory (Traefik, HelmCharts) |

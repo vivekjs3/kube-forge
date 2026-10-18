@@ -1,0 +1,17 @@
+# Declarative configuration file for K3s Server (/etc/rancher/k3s/config.yaml)
+write-kubeconfig-mode: "0644"
+tls-san:
+  - "10.10.10.10"
+  - "k8s-server-01"
+  - "k8s-server-01.lab.local"
+  - "127.0.0.1"
+
+# Network CIDRs
+cluster-cidr: "10.42.0.0/16"
+service-cidr: "10.43.0.0/16"
+
+# Optional component toggles
+# disable:
+#   - traefik
+#   - servicelb
+#   - local-storage

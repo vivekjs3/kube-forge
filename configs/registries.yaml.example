@@ -1,0 +1,10 @@
+# Private container registry mirror configuration (/etc/rancher/k3s/registries.yaml)
+mirrors:
+  docker.io:
+    endpoint:
+      - "https://registry-1.docker.io"
+# configs:
+#   "my-registry.local:5000":
+#     auth:
+#       username: "admin"
+#       password: "secretpassword"
