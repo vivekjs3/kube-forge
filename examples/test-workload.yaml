@@ -1,0 +1,44 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-hardway-test
+  namespace: default
+  labels:
+    app: nginx-hardway-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-hardway-test
+  template:
+    metadata:
+      labels:
+        app: nginx-hardway-test
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-hardway-service
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-hardway-test
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
