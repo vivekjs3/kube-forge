@@ -1,0 +1,7 @@
+{
+    "driver": "docker",
+    "cpus": 2,
+    "memory": "2048mb",
+    "container-runtime": "containerd",
+    "kubernetes-version": "v1.31.0"
+}

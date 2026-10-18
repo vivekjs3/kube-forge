@@ -1,190 +1,108 @@
-# kube-forge ⚒️
+# Minikube Installation Laboratory 💻
 
-> **The Kubernetes Installation Laboratory and Framework**  
-> *A clean, beginner-friendly, and technically deep repository for mastering, deploying, and validating Kubernetes across bare-metal, virtualized, and edge Linux infrastructure.*
-
----
-
-## 🧭 Overview
-
-**kube-forge** is not a generic Kubernetes tutorial. It is a comprehensive **Installation Laboratory and Framework** engineered to demystify how Kubernetes clusters are bootstrapped, configured, secured, and maintained from bare silicon or virtual machines up.
-
-Whether you are a Linux administrator learning container orchestration, an SRE designing resilient enterprise clusters, or a Platform Engineer automating bare-metal infrastructure, **kube-forge** teaches you:
-
-- 🧱 **WHAT** is being installed at each phase.
-- 🎯 **WHY** each kernel parameter, certificate, daemon, and manifest is required.
-- 📡 **HOW** the components communicate internally across mTLS and network boundaries.
-- 🔍 **WHAT** happens under the hood during control-plane and worker initialization.
-- ✅ **HOW** to validate the installation with deep health checks and test workloads.
-- 🛠️ **HOW** to troubleshoot node, runtime, CNI, and DNS failures.
-- 🔄 **HOW** to cleanly uninstall and reset nodes to pristine condition.
+> **Local Developer & Learning Sandbox**  
+> *Target Audience:* Beginners, Application Developers, and Testers  
+> *Target OS:* Ubuntu 22.04 LTS / 24.04 LTS (macOS / Windows also supported)  
+> *Primary Drivers:* Docker (containerized) or KVM2 / QEMU (virtualized)
 
 ---
 
-## 🌿 Branching Architecture & Laboratory Matrix
+## ⚠️ Important Architectural Context
 
-To keep implementations clean, modular, and unpolluted, **each installation method lives on its own dedicated Git branch**.
+> [!NOTE]
+> **Minikube is designed exclusively as a local Kubernetes learning and development environment.**
+> It is **NOT** a production bare-metal distribution. It simulates single or multi-node clusters inside a local Docker container or lightweight virtual machine on your developer laptop or workstation.
 
-The `main` branch functions as the architectural gateway and documentation hub. To enter a specific installation laboratory, simply check out its branch:
+---
 
-| Installation Method | Branch | Difficulty | Architectural Paradigm | Primary Use Case |
-|---|---|---|---|---|
-| **[Kubernetes The Hard Way](https://github.com/vivekjs3/kube-forge/tree/hardway)** | [`hardway`](#) | **Advanced** | Raw Binaries & Systemd Units | Complete deconstruction, manual PKI, zero-abstraction learning |
-| **[Kubeadm](https://github.com/vivekjs3/kube-forge/tree/kubeadm)** | [`kubeadm`](#) | **Intermediate** | Static Pods & Systemd Kubelet | Official CNCF reference standard for production bare-metal |
-| **[K3s](https://github.com/vivekjs3/kube-forge/tree/k3s)** | [`k3s`](#) | **Beginner** | Single Packaged Binary | Edge computing, IoT, lightweight single-node labs, fast CI |
-| **[RKE2 (Rancher Government)](https://github.com/vivekjs3/kube-forge/tree/rke2)** | [`rke2`](#) | **Intermediate** | Hardened Systemd & Embedded CRI | CIS benchmark hardened, defense & enterprise regulated workloads |
-| **[Minikube](https://github.com/vivekjs3/kube-forge/tree/minikube)** | [`minikube`](#) | **Beginner** | Single-Node VM / Docker Driver | Local developer workstation sandbox & rapid experimentation |
-| **[MicroK8s](https://github.com/vivekjs3/kube-forge/tree/microk8s)** | [`microk8s`](#) | **Beginner** | Canonical Snap Package | Zero-ops workstation/edge clustering with instant addons |
-| **[Kubespray](https://github.com/vivekjs3/kube-forge/tree/kubespray)** | [`kubespray`](#) | **Advanced** | Ansible Automation Playbooks | Production bare-metal fleet orchestration across multiple nodes |
-| **[Talos Linux](https://github.com/vivekjs3/kube-forge/tree/talos)** | [`talos`](#) | **Advanced** | Immutable API-Managed OS | Modern security-first, declarative GitOps bare-metal |
+## 🎯 What is Minikube?
+
+Maintained directly by Kubernetes SIG Cluster Lifecycle, Minikube provides a fast, one-command path to spin up an ephemeral, CNCF-certified Kubernetes cluster locally.
+
+### Key Capabilities:
+1. **Multiple Drivers:** Runs directly inside a local Docker container (fastest, lowest overhead) or inside a true hypervisor VM (KVM2, QEMU, VirtualBox).
+2. **Instant Addons:** Enable production capabilities with a single command:
+   ```bash
+   minikube addons enable ingress
+   minikube addons enable metrics-server
+   minikube addons enable dashboard
+   ```
+3. **Network Tunneling (`minikube tunnel`):** Bridges virtual cluster IP spaces directly to your developer workstation host route table, allowing direct access to `type: LoadBalancer` services.
+4. **Multi-Node Simulation:** Allows running simulated multi-node clusters on a single machine:
+   ```bash
+   minikube start --nodes 3
+   ```
+
+---
+
+## 🏗️ Laboratory Architecture
+
+```
++-------------------------------------------------------------------------------+
+|                       DEVELOPER WORKSTATION / LAPTOP                          |
+|                                                                               |
+|   +-----------------------------------------------------------------------+   |
+|   |                        minikube CLI (/usr/local/bin)                  |   |
+|   +-----------------------------------+-----------------------------------+   |
+|                                       |                                       |
+|                  +--------------------+--------------------+                  |
+|                  | (Driver Choice)                         |                  |
+|                  v                                         v                  |
+|   +-------------------------------+         +-----------------------------+   |
+|   |      Docker Driver (Default)  |         |     KVM2 / QEMU Driver      |   |
+|   |   Runs complete K8s node in   |   OR    |   Runs complete K8s node in |   |
+|   |   an isolated Docker container|         |   a dedicated Linux KVM VM  |   |
+|   +---------------+---------------+         +--------------+--------------+   |
+|                   |                                        |                  |
+|                   +-------------------+--------------------+                  |
+|                                       |                                       |
+|                                       v                                       |
+|   +-----------------------------------------------------------------------+   |
+|   |                     MINIKUBE CLUSTER SANDBOX                          |   |
+|   |   - Control Plane (kube-apiserver, etcd, scheduler, controller-mgr)   |   |
+|   |   - Worker Engine (kubelet, containerd CRI, CNI)                      |   |
+|   |   - Bundled Addons (Ingress Controller, Metrics Server, StorageClass) |   |
+|   +-----------------------------------------------------------------------+   |
++-------------------------------------------------------------------------------+
+```
+
+---
+
+## 📋 Step-by-Step Installation Workflow
+
+Follow the numbered scripts in `scripts/`:
 
 ```bash
-# Example: enter the kubeadm laboratory
-git checkout kubeadm
+# Step 1: Check virtualization flags, RAM, and Docker engine
+sudo ./scripts/01-prerequisites.sh
 
-# Example: enter Kubernetes The Hard Way
-git checkout hardway
+# Step 2: Download and install the minikube & kubectl binaries
+sudo ./scripts/02-install-minikube.sh
+
+# Step 3: Create the local Kubernetes cluster
+./scripts/03-create-cluster.sh
+
+# Step 4: Enable essential addons (ingress, metrics-server)
+./scripts/04-enable-addons.sh
+
+# Step 5: Validate cluster health and deploy a test workload
+./scripts/05-validate.sh
 ```
 
 ---
 
-## 🏛️ High-Level System Architecture
+## 🔄 Reset & Cleanup
 
-Kubernetes separates its responsibilities into the **Control Plane** (cluster brain and state store) and the **Worker Fleet** (execution runtime):
-
-```
-                                  KUBERNETES CLUSTER
-  +---------------------------------------------------------------------------------+
-  |                             CONTROL PLANE NODE(S)                               |
-  |                                                                                 |
-  |      +------------------+    +----------------------+                           |
-  |      |  kube-scheduler  |    | kube-controller-mgr  |                           |
-  |      +--------+---------+    +----------+-----------+                           |
-  |               |                         |                                       |
-  |               v                         v                                       |
-  |       +---------------+       +-------------------+                             |
-  |       | kube-apiserver| <---> |       etcd        | (Port 2379/2380)            |
-  |       |  (Port 6443)  |       +-------------------+                             |
-  |       +-------+-------+                                                         |
-  +---------------|-----------------------------------------------------------------+
-                  |
-                  | Encrypted mTLS (Port 6443)
-                  |
-  +---------------|-----------------------------------------------------------------+
-  |               v                 WORKER NODE(S)                                  |
-  |    +--------------------+    +--------------------+    +--------------------+   |
-  |    |      kubelet       |    |     kube-proxy     |    |      CoreDNS       |   |
-  |    |    (Port 10250)    |    | (iptables / IPVS)  |    |     (Port 53)      |   |
-  |    +----------+---------+    +--------------------+    +--------------------+   |
-  |               |                                                                 |
-  |               v (gRPC Unix Socket)                                              |
-  |    +-----------------------------------------------+                            |
-  |    |  Container Runtime Interface (containerd/CRI) |                            |
-  |    +----------------------+------------------------+                            |
-  |                           |                                                     |
-  |                           v (veth / eBPF / VXLAN)                               |
-  |    +-----------------------------------------------+                            |
-  |    |  Container Network Interface (Calico/Flannel) |                            |
-  |    +-----------------------------------------------+                            |
-  |                                                                                 |
-  |    +-----------------------+    +-----------------------+                       |
-  |    |  Pod Sandbox A (veth) |    |  Pod Sandbox B (veth) |                       |
-  |    +-----------------------+    +-----------------------+                       |
-  +---------------------------------------------------------------------------------+
+To stop and permanently delete the Minikube cluster sandbox:
+```bash
+./scripts/reset.sh
 ```
 
 ---
 
-## 🐧 Operating System Support Matrix
+## 📖 Deep Dives
 
-| Operating System | Version | `kubeadm` | `k3s` | `rke2` | `hardway` | `minikube` | `microk8s` | `kubespray` | `talos` |
-|---|---|---|---|---|---|---|---|---|---|
-| **Ubuntu Server** | 22.04 LTS (Jammy) | Verified | Verified | Verified | Verified | Verified | Verified | Verified | N/A |
-| **Ubuntu Server** | 24.04 LTS (Noble) | Verified | Verified | Verified | Verified | Verified | Verified | Verified | N/A |
-| **Debian** | 12 (Bookworm) | Planned | Planned | Planned | Planned | Verified | Planned | Planned | N/A |
-| **Rocky / AlmaLinux**| 9.x | Planned | Planned | Planned | Planned | Verified | N/A | Planned | N/A |
-| **Talos Linux OS** | 1.8+ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | Dedicated OS |
-
----
-
-## 📋 Standard Laboratory Topology
-
-Unless specified otherwise, multi-node laboratories in `kube-forge` utilize a predictable 3-node topology on a private subnet:
-
-```
-Control Plane:
-  k8s-control-01  |  10.10.10.10  |  2 vCPU, 4 GB RAM  |  Ubuntu 24.04 LTS
-
-Workers:
-  k8s-worker-01   |  10.10.10.11  |  2 vCPU, 2 GB RAM  |  Ubuntu 24.04 LTS
-  k8s-worker-02   |  10.10.10.12  |  2 vCPU, 2 GB RAM  |  Ubuntu 24.04 LTS
-```
-
----
-
-## 📦 Standard Implementation Branch Structure
-
-Every implementation branch follows an identical, transparent layout:
-
-```text
-<branch>/
-├── README.md               # Quickstart, step-by-step workflow, topology
-├── ARCHITECTURE.md         # Component diagrams and data paths specific to this method
-├── PREREQUISITES.md        # Hardware, OS, kernel, port, and network requirements
-├── TROUBLESHOOTING.md      # Matrix of known failures, diagnostic commands, and fixes
-├── RESET.md                # Teardown, uninstallation, and node recovery instructions
-│
-├── docs/                   # Detailed documentation
-│   ├── architecture.md     # Deep dive into how this distribution functions
-│   ├── networking.md       # CNI, service routing, and packet flow details
-│   ├── components.md       # Binaries, systemd units, configuration files
-│   └── validation.md       # Verification procedures & expected outputs
-│
-├── scripts/                # Numbered, idempotent, educational shell scripts
-│   ├── 01-prerequisites.sh
-│   ├── 02-system-config.sh
-│   ├── 03-container-runtime.sh
-│   ├── 04-install-kubernetes.sh
-│   ├── 05-init-cluster.sh
-│   ├── 06-install-cni.sh
-│   ├── 07-join-workers.sh
-│   └── 08-validate.sh
-│
-├── configs/                # Sample configuration templates (*.yaml.example, *.toml)
-├── examples/               # Test workloads (nginx deployment, service, ingress test)
-└── tests/                  # Verification and diagnostic test runners
-```
-
----
-
-## 🔒 Security & Code Hygiene
-
-- **Zero Secrets Committed:** All configuration files use `.example` templates. Certificates, keys, tokens, and credentials are never stored in git.
-- **Idempotency:** Scripts verify current system state prior to mutating files or kernel settings.
-- **Explicit Versioning:** We pin tested versions of Kubernetes and components (e.g. Kubernetes `v1.31.x`) rather than installing moving `latest` targets.
-- **Safety First:** Reset scripts require explicit user confirmation before tearing down configurations or packages.
-
----
-
-## 📚 Deep-Dive Documentation Index
-
-Explore the conceptual documentation housed in `docs/`:
-
-- [**Kubernetes Internals Deep Dive**](file:///home/vivek/k8s-proj/docs/kubernetes-internals.md) — What runs where, how components communicate, and the pod creation sequence.
-- [**Networking Deep Dive**](file:///home/vivek/k8s-proj/docs/networking-deep-dive.md) — Underlay vs. Overlay, CNI plugins, packet encapsulation, and Service routing.
-- [**Operating System Preparation**](file:///home/vivek/k8s-proj/docs/operating-systems.md) — Kernel modules, sysctl parameters, swap mechanics, and firewall ports.
-- [**Security Baseline & PKI**](file:///home/vivek/k8s-proj/docs/security-baseline.md) — Certificate authorities, SAN requirements, RBAC, and node authorization.
-- [**Laboratory Topologies**](file:///home/vivek/k8s-proj/docs/lab-topologies.md) — Reference hardware, network layouts, and `/etc/hosts` configurations.
-- [**Installation Selection Guide**](file:///home/vivek/k8s-proj/INSTALLATIONS.md) — Comprehensive comparison and decision tree.
-
----
-
-## 🤝 Contributing
-
-Contributions to `kube-forge` are warmly welcomed! Please read our [**Contributing Guide**](file:///home/vivek/k8s-proj/CONTRIBUTING.md) and [**Agent Operating Guide**](file:///home/vivek/k8s-proj/AGENTS.md) before submitting pull requests.
-
----
-
-## 📄 License
-
-This project is licensed under the [MIT License](file:///home/vivek/k8s-proj/LICENSE).
+- [ARCHITECTURE.md](file:///home/vivek/k8s-proj/ARCHITECTURE.md) — Drivers, virtualization encapsulation, and addon controller.
+- [PREREQUISITES.md](file:///home/vivek/k8s-proj/PREREQUISITES.md) — Docker and hardware virtualization requirements.
+- [TROUBLESHOOTING.md](file:///home/vivek/k8s-proj/TROUBLESHOOTING.md) — Driver crashes, permission issues, and tunnel timeouts.
+- [docs/networking.md](file:///home/vivek/k8s-proj/docs/networking.md) — `minikube tunnel`, `minikube service`, and port-forwarding.
