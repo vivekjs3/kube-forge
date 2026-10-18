@@ -1,190 +1,112 @@
-# kube-forge ⚒️
+# RKE2 (Rancher Government) Installation Laboratory 🛡️
 
-> **The Kubernetes Installation Laboratory and Framework**  
-> *A clean, beginner-friendly, and technically deep repository for mastering, deploying, and validating Kubernetes across bare-metal, virtualized, and edge Linux infrastructure.*
-
----
-
-## 🧭 Overview
-
-**kube-forge** is not a generic Kubernetes tutorial. It is a comprehensive **Installation Laboratory and Framework** engineered to demystify how Kubernetes clusters are bootstrapped, configured, secured, and maintained from bare silicon or virtual machines up.
-
-Whether you are a Linux administrator learning container orchestration, an SRE designing resilient enterprise clusters, or a Platform Engineer automating bare-metal infrastructure, **kube-forge** teaches you:
-
-- 🧱 **WHAT** is being installed at each phase.
-- 🎯 **WHY** each kernel parameter, certificate, daemon, and manifest is required.
-- 📡 **HOW** the components communicate internally across mTLS and network boundaries.
-- 🔍 **WHAT** happens under the hood during control-plane and worker initialization.
-- ✅ **HOW** to validate the installation with deep health checks and test workloads.
-- 🛠️ **HOW** to troubleshoot node, runtime, CNI, and DNS failures.
-- 🔄 **HOW** to cleanly uninstall and reset nodes to pristine condition.
+> **Next-Generation Security-Hardened Kubernetes (CIS & FIPS Compliant)**  
+> *Target Audience:* Intermediate to Senior Platform Engineers & SREs  
+> *Target OS:* Ubuntu 22.04 LTS / 24.04 LTS (also RHEL, Rocky Linux)  
+> *Target Distribution Version:* RKE2 v1.31.x / v1.30.x
 
 ---
 
-## 🌿 Branching Architecture & Laboratory Matrix
+## 🎯 What is RKE2?
 
-To keep implementations clean, modular, and unpolluted, **each installation method lives on its own dedicated Git branch**.
+**RKE2** (also known as *RKE Government*) is Rancher's enterprise distribution engineered from the ground up for mission-critical and defense environments. It merges the deployment simplicity and packaging of K3s with strict upstream Kubernetes alignment and Center for Internet Security (CIS) compliance.
 
-The `main` branch functions as the architectural gateway and documentation hub. To enter a specific installation laboratory, simply check out its branch:
+> [!IMPORTANT]
+> **RKE2 is NOT RKE1 (RKE Classic).**
+> - *RKE1* relied on Docker and automated SSH connections from an external workstation.
+> - *RKE2* is fully self-contained, runs as native `systemd` services (`rke2-server` / `rke2-agent`), embeds its own hardened `containerd` runtime, and uses embedded `etcd` for consensus.
 
-| Installation Method | Branch | Difficulty | Architectural Paradigm | Primary Use Case |
-|---|---|---|---|---|
-| **[Kubernetes The Hard Way](https://github.com/vivekjs3/kube-forge/tree/hardway)** | [`hardway`](#) | **Advanced** | Raw Binaries & Systemd Units | Complete deconstruction, manual PKI, zero-abstraction learning |
-| **[Kubeadm](https://github.com/vivekjs3/kube-forge/tree/kubeadm)** | [`kubeadm`](#) | **Intermediate** | Static Pods & Systemd Kubelet | Official CNCF reference standard for production bare-metal |
-| **[K3s](https://github.com/vivekjs3/kube-forge/tree/k3s)** | [`k3s`](#) | **Beginner** | Single Packaged Binary | Edge computing, IoT, lightweight single-node labs, fast CI |
-| **[RKE2 (Rancher Government)](https://github.com/vivekjs3/kube-forge/tree/rke2)** | [`rke2`](#) | **Intermediate** | Hardened Systemd & Embedded CRI | CIS benchmark hardened, defense & enterprise regulated workloads |
-| **[Minikube](https://github.com/vivekjs3/kube-forge/tree/minikube)** | [`minikube`](#) | **Beginner** | Single-Node VM / Docker Driver | Local developer workstation sandbox & rapid experimentation |
-| **[MicroK8s](https://github.com/vivekjs3/kube-forge/tree/microk8s)** | [`microk8s`](#) | **Beginner** | Canonical Snap Package | Zero-ops workstation/edge clustering with instant addons |
-| **[Kubespray](https://github.com/vivekjs3/kube-forge/tree/kubespray)** | [`kubespray`](#) | **Advanced** | Ansible Automation Playbooks | Production bare-metal fleet orchestration across multiple nodes |
-| **[Talos Linux](https://github.com/vivekjs3/kube-forge/tree/talos)** | [`talos`](#) | **Advanced** | Immutable API-Managed OS | Modern security-first, declarative GitOps bare-metal |
+### Key Architectural Pillars:
+1. **CIS Benchmark Hardening:** Designed to pass CIS Kubernetes Benchmark tests out of the box with zero manual audit remediation.
+2. **Embedded etcd Datastore:** Unlike K3s which defaults to SQLite/Kine, RKE2 always runs standard, production-ready `etcd`.
+3. **Batteries Included & Hardened:** Ships with embedded containerd, Canal CNI (Calico + Flannel) or Cilium, CoreDNS, NGINX Ingress Controller, and Metrics Server.
+4. **FIPS 140-2 Cryptographic Alignment:** Provides built-in support for FIPS-validated cryptography modules.
 
+---
+
+## 🏗️ Laboratory Topology
+
+```
+                  Host Network: 10.10.10.0/24 (Example Subnet)
+                                      |
+         +----------------------------+----------------------------+
+         |                                                         |
+         v                                                         v
++-------------------------+                               +-------------------------+
+|      rke2-server-01     |                               |       rke2-agent-01     |
+| IP: 10.10.10.10         |                               | IP: 10.10.10.11         |
+| Role: Server (Control)  |                               | Role: Agent (Worker)    |
+| 2 vCPU, 4 GB RAM        |                               | 2 vCPU, 2 GB RAM        |
++-------------------------+                               +-------------------------+
+```
+
+---
+
+## 📋 Step-by-Step Installation Workflow
+
+Follow the numbered scripts in `scripts/`:
+
+### On RKE2 Server (`rke2-server-01`):
 ```bash
-# Example: enter the kubeadm laboratory
-git checkout kubeadm
+# Step 1: Validate system resources, kernel, and ports
+sudo ./scripts/01-prerequisites.sh
 
-# Example: enter Kubernetes The Hard Way
-git checkout hardway
+# Step 2: Configure kernel modules, sysctl, and limits
+sudo ./scripts/02-system-config.sh
+
+# Step 3: Install RKE2 server and initialize systemd service
+sudo ./scripts/03-install-server.sh
+
+# Step 4: Configure user environment and verify kubectl
+./scripts/04-configure.sh
+```
+
+### On RKE2 Agent Worker Node (`rke2-agent-01`):
+```bash
+# Run steps 1 and 2 on the agent node:
+sudo ./scripts/01-prerequisites.sh
+sudo ./scripts/02-system-config.sh
+
+# Step 5: Join the agent node to the server
+# (Obtain the node-token from /var/lib/rancher/rke2/server/node-token on the server)
+sudo ./scripts/05-join-agents.sh https://10.10.10.10:9345 <NODE_TOKEN>
+```
+
+### Post-Installation Cluster Validation:
+```bash
+# Step 6: Validate nodes, pods, Canal CNI, and run test workload
+./scripts/06-validate.sh
 ```
 
 ---
 
-## 🏛️ High-Level System Architecture
+## 🔍 What Happens During RKE2 Installation?
 
-Kubernetes separates its responsibilities into the **Control Plane** (cluster brain and state store) and the **Worker Fleet** (execution runtime):
+1. **Binary Placement:** Installs `/usr/local/bin/rke2` and runtime utilities into `/var/lib/rancher/rke2/bin/` (`kubectl`, `crictl`, `ctr`).
+2. **Systemd Unit Generation:** Generates `rke2-server.service` and `rke2-agent.service`.
+3. **Control Plane Spin-Up:** RKE2 launches `etcd`, `kube-apiserver`, `kube-controller-manager`, and `kube-scheduler` as static pods managed by its embedded kubelet.
+4. **Registration Port (`9345`):** RKE2 opens TCP port `9345` (*Supervisor API*) exclusively for node join handshakes and token verification, keeping the Kubernetes API on `6443` strictly separated.
+5. **HelmChart Controller:** Automatically deploys bundled HelmCharts: Canal CNI, CoreDNS, NGINX Ingress Controller, and Metrics Server.
 
+---
+
+## 🔄 Reset & Cleanup
+
+To uninstall RKE2 cleanly:
+```bash
+sudo ./scripts/reset.sh
 ```
-                                  KUBERNETES CLUSTER
-  +---------------------------------------------------------------------------------+
-  |                             CONTROL PLANE NODE(S)                               |
-  |                                                                                 |
-  |      +------------------+    +----------------------+                           |
-  |      |  kube-scheduler  |    | kube-controller-mgr  |                           |
-  |      +--------+---------+    +----------+-----------+                           |
-  |               |                         |                                       |
-  |               v                         v                                       |
-  |       +---------------+       +-------------------+                             |
-  |       | kube-apiserver| <---> |       etcd        | (Port 2379/2380)            |
-  |       |  (Port 6443)  |       +-------------------+                             |
-  |       +-------+-------+                                                         |
-  +---------------|-----------------------------------------------------------------+
-                  |
-                  | Encrypted mTLS (Port 6443)
-                  |
-  +---------------|-----------------------------------------------------------------+
-  |               v                 WORKER NODE(S)                                  |
-  |    +--------------------+    +--------------------+    +--------------------+   |
-  |    |      kubelet       |    |     kube-proxy     |    |      CoreDNS       |   |
-  |    |    (Port 10250)    |    | (iptables / IPVS)  |    |     (Port 53)      |   |
-  |    +----------+---------+    +--------------------+    +--------------------+   |
-  |               |                                                                 |
-  |               v (gRPC Unix Socket)                                              |
-  |    +-----------------------------------------------+                            |
-  |    |  Container Runtime Interface (containerd/CRI) |                            |
-  |    +----------------------+------------------------+                            |
-  |                           |                                                     |
-  |                           v (veth / eBPF / VXLAN)                               |
-  |    +-----------------------------------------------+                            |
-  |    |  Container Network Interface (Calico/Flannel) |                            |
-  |    +-----------------------------------------------+                            |
-  |                                                                                 |
-  |    +-----------------------+    +-----------------------+                       |
-  |    |  Pod Sandbox A (veth) |    |  Pod Sandbox B (veth) |                       |
-  |    +-----------------------+    +-----------------------+                       |
-  +---------------------------------------------------------------------------------+
+Or use the official uninstaller:
+```bash
+sudo /usr/local/bin/rke2-uninstall.sh        # on server
+sudo /usr/local/bin/rke2-agent-uninstall.sh  # on agent
 ```
 
 ---
 
-## 🐧 Operating System Support Matrix
+## 📖 Deep Dives
 
-| Operating System | Version | `kubeadm` | `k3s` | `rke2` | `hardway` | `minikube` | `microk8s` | `kubespray` | `talos` |
-|---|---|---|---|---|---|---|---|---|---|
-| **Ubuntu Server** | 22.04 LTS (Jammy) | Verified | Verified | Verified | Verified | Verified | Verified | Verified | N/A |
-| **Ubuntu Server** | 24.04 LTS (Noble) | Verified | Verified | Verified | Verified | Verified | Verified | Verified | N/A |
-| **Debian** | 12 (Bookworm) | Planned | Planned | Planned | Planned | Verified | Planned | Planned | N/A |
-| **Rocky / AlmaLinux**| 9.x | Planned | Planned | Planned | Planned | Verified | N/A | Planned | N/A |
-| **Talos Linux OS** | 1.8+ | N/A | N/A | N/A | N/A | N/A | N/A | N/A | Dedicated OS |
-
----
-
-## 📋 Standard Laboratory Topology
-
-Unless specified otherwise, multi-node laboratories in `kube-forge` utilize a predictable 3-node topology on a private subnet:
-
-```
-Control Plane:
-  k8s-control-01  |  10.10.10.10  |  2 vCPU, 4 GB RAM  |  Ubuntu 24.04 LTS
-
-Workers:
-  k8s-worker-01   |  10.10.10.11  |  2 vCPU, 2 GB RAM  |  Ubuntu 24.04 LTS
-  k8s-worker-02   |  10.10.10.12  |  2 vCPU, 2 GB RAM  |  Ubuntu 24.04 LTS
-```
-
----
-
-## 📦 Standard Implementation Branch Structure
-
-Every implementation branch follows an identical, transparent layout:
-
-```text
-<branch>/
-├── README.md               # Quickstart, step-by-step workflow, topology
-├── ARCHITECTURE.md         # Component diagrams and data paths specific to this method
-├── PREREQUISITES.md        # Hardware, OS, kernel, port, and network requirements
-├── TROUBLESHOOTING.md      # Matrix of known failures, diagnostic commands, and fixes
-├── RESET.md                # Teardown, uninstallation, and node recovery instructions
-│
-├── docs/                   # Detailed documentation
-│   ├── architecture.md     # Deep dive into how this distribution functions
-│   ├── networking.md       # CNI, service routing, and packet flow details
-│   ├── components.md       # Binaries, systemd units, configuration files
-│   └── validation.md       # Verification procedures & expected outputs
-│
-├── scripts/                # Numbered, idempotent, educational shell scripts
-│   ├── 01-prerequisites.sh
-│   ├── 02-system-config.sh
-│   ├── 03-container-runtime.sh
-│   ├── 04-install-kubernetes.sh
-│   ├── 05-init-cluster.sh
-│   ├── 06-install-cni.sh
-│   ├── 07-join-workers.sh
-│   └── 08-validate.sh
-│
-├── configs/                # Sample configuration templates (*.yaml.example, *.toml)
-├── examples/               # Test workloads (nginx deployment, service, ingress test)
-└── tests/                  # Verification and diagnostic test runners
-```
-
----
-
-## 🔒 Security & Code Hygiene
-
-- **Zero Secrets Committed:** All configuration files use `.example` templates. Certificates, keys, tokens, and credentials are never stored in git.
-- **Idempotency:** Scripts verify current system state prior to mutating files or kernel settings.
-- **Explicit Versioning:** We pin tested versions of Kubernetes and components (e.g. Kubernetes `v1.31.x`) rather than installing moving `latest` targets.
-- **Safety First:** Reset scripts require explicit user confirmation before tearing down configurations or packages.
-
----
-
-## 📚 Deep-Dive Documentation Index
-
-Explore the conceptual documentation housed in `docs/`:
-
-- [**Kubernetes Internals Deep Dive**](file:///home/vivek/k8s-proj/docs/kubernetes-internals.md) — What runs where, how components communicate, and the pod creation sequence.
-- [**Networking Deep Dive**](file:///home/vivek/k8s-proj/docs/networking-deep-dive.md) — Underlay vs. Overlay, CNI plugins, packet encapsulation, and Service routing.
-- [**Operating System Preparation**](file:///home/vivek/k8s-proj/docs/operating-systems.md) — Kernel modules, sysctl parameters, swap mechanics, and firewall ports.
-- [**Security Baseline & PKI**](file:///home/vivek/k8s-proj/docs/security-baseline.md) — Certificate authorities, SAN requirements, RBAC, and node authorization.
-- [**Laboratory Topologies**](file:///home/vivek/k8s-proj/docs/lab-topologies.md) — Reference hardware, network layouts, and `/etc/hosts` configurations.
-- [**Installation Selection Guide**](file:///home/vivek/k8s-proj/INSTALLATIONS.md) — Comprehensive comparison and decision tree.
-
----
-
-## 🤝 Contributing
-
-Contributions to `kube-forge` are warmly welcomed! Please read our [**Contributing Guide**](file:///home/vivek/k8s-proj/CONTRIBUTING.md) and [**Agent Operating Guide**](file:///home/vivek/k8s-proj/AGENTS.md) before submitting pull requests.
-
----
-
-## 📄 License
-
-This project is licensed under the [MIT License](file:///home/vivek/k8s-proj/LICENSE).
+- [ARCHITECTURE.md](file:///home/vivek/k8s-proj/ARCHITECTURE.md) — RKE2 internal mechanics, Supervisor API (9345), and CIS hardening.
+- [PREREQUISITES.md](file:///home/vivek/k8s-proj/PREREQUISITES.md) — Hardware specs and firewall port matrix.
+- [TROUBLESHOOTING.md](file:///home/vivek/k8s-proj/TROUBLESHOOTING.md) — Common RKE2 failures and remediation.
+- [docs/networking.md](file:///home/vivek/k8s-proj/docs/networking.md) — Canal CNI and NGINX Ingress routing.
