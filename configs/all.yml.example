@@ -1,0 +1,6 @@
+# Kubespray Global Variables (inventory/mycluster/group_vars/all/all.yml)
+bootstrap_os: ubuntu
+container_manager: containerd
+etcd_deployment_type: host
+bin_dir: /usr/local/bin
+loadbalancer_apiserver_localhost: false
